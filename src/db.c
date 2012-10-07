@@ -466,7 +466,10 @@ long long getExpire(redisDb *db, robj *key) {
  * will be consistent even if we allow write operations against expiring
  * keys. */
 void propagateExpire(redisDb *db, robj *key) {
-    robj *argv[2];
+    /*     HORRIBLE HACK STARTS HERE  */
+    /* robj *argv[2]; */
+    robj *argv[3];
+    /*     HORRIBLE HACK ENDS HERE  */
 
     argv[0] = shared.del;
     argv[1] = key;
@@ -480,6 +483,35 @@ void propagateExpire(redisDb *db, robj *key) {
 
     decrRefCount(argv[0]);
     decrRefCount(argv[1]);
+
+    /*    HORRIBLE HACK STARTS HERE  */
+    if ( ((char *)(key->ptr))[0] == '@' )
+    {
+      static redisClient *c = NULL;
+      if ( !c )
+         c = createClient(-1);
+      
+      argv[0] = createStringObject("LPUSH",5);
+      argv[1] = createStringObject("#expired",8);
+      argv[2] = key;
+      incrRefCount(argv[2]);
+      
+      c->argv = argv;
+      c->argc = 3;
+      c->cmd = lookupCommand(argv[0]->ptr);
+      selectDb(c,db->id);
+      call(c,REDIS_CALL_SLOWLOG | REDIS_CALL_STATS);
+
+      c->bufpos = 0;
+      while(listLength(c->reply))
+        listDelNode(c->reply,listFirst(c->reply));
+
+      decrRefCount(argv[0]);
+      decrRefCount(argv[1]);
+      decrRefCount(argv[2]);
+    }                      
+    /*    HORRIBLE HACK ENDS HERE  */ 
+
 }
 
 int expireIfNeeded(redisDb *db, robj *key) {
