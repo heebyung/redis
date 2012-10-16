@@ -1,6 +1,18 @@
 #ifndef __REDIS_H
 #define __REDIS_H
 
+/**
+ * EXPIREPEND - Provides explicit handling of expired keys
+ * : any key(s) with prefix '@', when expired, LPUSH to "#expired" list
+ *   and removed from expiration monitoring list. User should handle the
+ *   expired key(s) by RPOP from the "#expired" list and DEL the key(s).
+ *
+ * Hacked by Hyok S. Choi <hyok.choi@samsung.com>
+ *
+ * Set to '1' to enable, '0' to disable.
+ */
+#define EXPIREPEND 1
+
 #include "fmacros.h"
 #include "config.h"
 
@@ -952,6 +964,10 @@ long long emptyDb();
 int selectDb(redisClient *c, int id);
 void signalModifiedKey(redisDb *db, robj *key);
 void signalFlushedDb(int dbid);
+
+#if EXPIREPEND
+int expirePendIfNeeded(redisDb *db, robj *keyobj);
+#endif
 
 /* Git SHA1 */
 char *redisGitSHA1(void);

@@ -24,6 +24,9 @@ redisClient *createClient(int fd) {
     redisClient *c = zmalloc(sizeof(redisClient));
     c->bufpos = 0;
 
+#if EXPIREPEND
+    if(fd>0) {
+#endif
     anetNonBlock(NULL,fd);
     anetTcpNoDelay(NULL,fd);
     if (aeCreateFileEvent(server.el,fd,AE_READABLE,
@@ -33,7 +36,9 @@ redisClient *createClient(int fd) {
         zfree(c);
         return NULL;
     }
-
+#if EXPIREPEND
+    }
+#endif
     selectDb(c,0);
     c->fd = fd;
     c->querybuf = sdsempty();

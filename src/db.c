@@ -244,11 +244,7 @@ void existsCommand(redisClient *c) {
 }
 
 void selectCommand(redisClient *c) {
-    long id;
-
-    if (getLongFromObjectOrReply(c, c->argv[1], &id,
-        "invalid DB index") != REDIS_OK)
-        return;
+    int id = atoi(c->argv[1]->ptr);
 
     if (selectDb(c,id) == REDIS_ERR) {
         addReplyError(c,"invalid DB index");
@@ -497,6 +493,41 @@ void propagateExpire(redisDb *db, robj *key) {
     decrRefCount(argv[1]);
 }
 
+#if EXPIREPEND
+#define EXPIREPENDPREFIX	('@')
+int expirePendIfNeeded(redisDb *db, robj *keyobj) {
+    if (((sds)(keyobj->ptr))[0]!=EXPIREPENDPREFIX)
+        return 0; // Not Handled (normal expiration needed)
+
+    // add the key to "#expired" list
+    robj *argv[3];
+    static redisClient *c = NULL;
+
+    if ( !c ) c = createClient(-1);
+    argv[0] = createStringObject("LPUSH",5);
+    argv[1] = createStringObject("#expired",8);
+    argv[2] = keyobj;
+
+    c->argv = argv;
+    c->argc = 3;
+    c->cmd = lookupCommand(argv[0]->ptr);
+    selectDb(c,db->id);
+    call(c);
+
+    // remove from volatile list
+    removeExpire(db,keyobj);
+
+    // cleanup the client reply list and refCounts
+    c->bufpos = 0;
+    while(listLength(c->reply))
+        listDelNode(c->reply,listFirst(c->reply));
+
+    decrRefCount(argv[0]);
+    decrRefCount(argv[1]);
+
+    return 1; // added to #expired pending list
+}
+#endif
 int expireIfNeeded(redisDb *db, robj *key) {
     time_t when = getExpire(db,key);
 
@@ -519,6 +550,10 @@ int expireIfNeeded(redisDb *db, robj *key) {
     /* Return when this key has not expired */
     if (time(NULL) <= when) return 0;
 
+#if EXPIREPEND
+    if(expirePendIfNeeded(db, key))
+      return 0; // pended to #expired list
+#endif
     /* Delete the key */
     server.stat_expiredkeys++;
     propagateExpire(db,key);

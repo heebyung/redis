@@ -505,12 +505,19 @@ void activeExpireCycle(void) {
                 if (now > t) {
                     sds key = dictGetEntryKey(de);
                     robj *keyobj = createStringObject(key,sdslen(key));
-
+#if EXPIREPEND
+                    if (expirePendIfNeeded(db, keyobj)) { /* inserted to expired list? */
+                        decrRefCount(keyobj); /* cleanup the key */
+                    } else {
+#endif
                     propagateExpire(db,keyobj);
                     dbDelete(db,keyobj);
                     decrRefCount(keyobj);
                     expired++;
                     server.stat_expiredkeys++;
+#if EXPIREPEND
+                    }
+#endif
                 }
             }
             /* We can't block forever here even if there are many keys to
